@@ -13,13 +13,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Queryable, Debug, PartialEq, Eq)]
-#[insertable_into(dependency)]
-#[changeset_for(dependency)]
+use diesel::prelude::*;
+use diesel::pg::Pg;
+use diesel::{insert, delete};
+
+use semver::VersionReq;
+
+use std::str::FromStr;
+
+use ::utils::error::BackendResult;
+use ::web::backend::db::{dependency, packageversion, packageversion_has_dependency};
+use ::web::backend::db::schema::{Package, PackageVersion, PackageVersionHasDependency};
+
+#[derive(Queryable, Debug, PartialEq, Eq, Insertable, Identifiable, AsChangeset)]
+#[table_name="dependency"]
 pub struct Dependency
 {
-    id: String,
-    version_req: String,
+    pub id: String,
+    pub version_req: String,
 }
 
 impl Dependency
@@ -35,8 +46,9 @@ impl Dependency
             version_req: format!("{}", version_req),
         };
 
+        let dep = try!(insert(&this).into(dependency::table).get_result(connection));
         try!(PackageVersionHasDependency::new(connection, package_version, &this));
-        err!(insert(&this).into(dependency::table).get_result(connection))
+        Ok(dep)
     }
 
     pub fn get<C: Connection<Backend=Pg>>(connection: &C, id: &str, version_req: &VersionReq) -> BackendResult<Self>
@@ -82,15 +94,11 @@ impl Dependency
     {
         match PackageVersionHasDependency::get(connection, &version, &self) {
             Ok(has) => {
-                match connection.transaction(move || {
+                connection.transaction(move || {
                     try!(has.delete(connection));
                     if try!(self.belongs(connection)).len() == 0 { try!(self.delete(connection)) };
                     Ok(())
-                }) {
-                    Ok(()) => Ok(()),
-                    Err(TransactionError::CouldntCreateTransaction(err)) => Err(BackendError::DBError(err)),
-                    Err(TransactionError::UserReturnedError(err)) => Err(err),
-                }
+                })
             },
             Err(x) => Err(x),
         }

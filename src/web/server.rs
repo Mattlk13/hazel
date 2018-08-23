@@ -20,10 +20,12 @@ use iron::typemap::Key;
 use iron::status;
 use iron::modifiers::Redirect;
 use hyper::server::Listening;
+use hyper_native_tls::NativeTlsServer;
 use mount::Mount;
 use router::Router;
 use persistent::{Read, Write};
 use staticfile::Static;
+use multipart::server::iron::Intercept;
 
 use r2d2::Pool;
 use diesel::pg::PgConnection;
@@ -95,41 +97,41 @@ pub fn start(pool: Pool<ConnectionManager<PgConnection>>, storage: Storage) -> L
                 } else {
                     Ok(Response::with((status::TemporaryRedirect, Redirect({
                         let mut base = req.url.clone();
-                        base.path.push(String::from("index"));
+                        base.as_mut().path_segments_mut().unwrap().push("index");
                         base
                     }))))
                 }
             }
             redirect
-        });
+        }, "root_redirect");
         interface.get("/index", {
             fn redirect(req: &mut Request) -> IronResult<Response> {
                 Ok(Response::with((status::TemporaryRedirect, Redirect({
                     let mut base = req.url.clone();
-                    base.path.push(String::from("1"));
+                    base.as_mut().path_segments_mut().unwrap().push("1");
                     base
                 }))))
             }
             redirect
-        });
-        interface.get("/index/:page", interface_index);
-        interface.get("/user", interface_user);
-        interface.get("/user/edit", interface_user);
-        interface.post("/user/edit", interface_user_update);
-        interface.post("/register", interface_register);
-        interface.post("/login", interface_login);
-        interface.get("/logout", interface_logout);
-        interface.post("/apikey/reset", interface_apikey);
-        interface.post("/apikey/revoke", interface_apikey);
-        interface.get("/packages/:id", interface_package_newestver);
-        interface.get("/packages/:id/:version", interface_package);
-        interface.get("/packages/:id/:version/edit", interface_package);
-        interface.post("/packages/:id/edit", interface_pkg_update);
-        interface.post("/packages/:id/:version/edit", interface_pkgver_update);
-        interface.get("/packages/transfer/:id/:new_maintainer", interface_transfer);
+        }, "index_redirect");
+        interface.get("/index/:page", interface_index, "index");
+        interface.get("/user", interface_user, "user");
+        interface.get("/user/edit", interface_user, "user_edit");
+        interface.post("/user/edit", interface_user_update, "user_update");
+        interface.post("/register", interface_register, "register");
+        interface.post("/login", interface_login, "login");
+        interface.get("/logout", interface_logout, "logout");
+        interface.post("/apikey/reset", interface_apikey, "apikey_reset");
+        interface.post("/apikey/revoke", interface_apikey, "apikey_revoke");
+        interface.get("/packages/:id", interface_package_newestver, "package_by_id");
+        interface.get("/packages/:id/:version", interface_package, "package_by_id_version");
+        interface.get("/packages/:id/:version/edit", interface_package, "package_edit");
+        interface.post("/packages/:id/edit", interface_pkg_update, "package_update");
+        interface.post("/packages/:id/:version/edit", interface_pkgver_update, "packageversion_update");
+        interface.get("/packages/transfer/:id/:new_maintainer", interface_transfer, "package_transfer");
         if CONFIG.auth.mail.is_some() {
-            interface.post("/mail_confirmation/resend", interface_mail_resend);
-            interface.get("/mail_confirmation/:key", interface_mail_confirmation);
+            interface.post("/mail_confirmation/resend", interface_mail_resend, "mail_confirm_resend");
+            interface.get("/mail_confirmation/:key", interface_mail_confirmation, "mail_confirm");
         }
 
         mount.mount("/css/", Static::new(PathBuf::from(CONFIG.web.resources.clone()).join("css")));
@@ -173,36 +175,36 @@ pub fn start(pool: Pool<ConnectionManager<PgConnection>>, storage: Storage) -> L
     {
         let mut feed = Router::new();
 
-        feed.get("", index);
-        feed.get("$metadata", metadata);
+        feed.get("", index, "index");
+        feed.get("$metadata", metadata, "metadata");
 
         // get all package(s)
-        feed.get("Packages()", packages);
-        feed.get("Packages", packages);
+        feed.get("Packages()", packages, "packages_braces");
+        feed.get("Packages", packages, "packages");
 
         // download specific package
-        feed.get("package/:id/:version", download);
+        feed.get("package/:id/:version", download, "package_download");
 
         // add/delete package
-        feed.post("package", upload);
-        feed.put("package", upload);
-        feed.delete("package/:id/:version", delete);
-        feed.delete("package/:id", delete);
+        feed.post("package", upload, "package_upload_post");
+        feed.put("package", upload, "package_upload_put");
+        feed.delete("package/:id/:version", delete, "packageversion_delete");
+        feed.delete("package/:id", delete, "package_delete");
 
         // functions aka filter packages
-        feed.get("FindPackagesById()", packagesbyid);
-        feed.get("FindPackagesById", packagesbyid);
-        feed.get("GetUpdates()", updates);
-        feed.get("GetUpdates", updates);
-        feed.get("Search()", search);
-        feed.get("Search", search);
+        feed.get("FindPackagesById()", packagesbyid, "find_package_by_id_braces");
+        feed.get("FindPackagesById", packagesbyid, "find_package_by_id");
+        feed.get("GetUpdates()", updates, "package_update_braces");
+        feed.get("GetUpdates", updates, "package_update");
+        feed.get("Search()", search, "search_braces");
+        feed.get("Search", search, "search");
 
         // tab-completion
-        feed.get("package-ids", complete_ids);
-        feed.get("package-versions/:id", complete_ver);
+        feed.get("package-ids", complete_ids, "complete_ids");
+        feed.get("package-versions/:id", complete_ver, "complete_versions");
 
         //Package(Id=':id',Version=':version')
-        feed.get("*", package); //Router does not handle this correctly
+        feed.get("*", package, "package_braces"); //Router does not handle this correctly
 
         mount.mount("/api/v2/", feed);
     }
@@ -211,12 +213,13 @@ pub fn start(pool: Pool<ConnectionManager<PgConnection>>, storage: Storage) -> L
     chain.link_around(SessionManager);
     chain.link_before(PathNormalizer);
     chain.link_before(Logger);
+    chain.link_before(Intercept::default().file_size_limit((CONFIG.web.max_upload_filesize_mb * 1024 * 1024) as u64));
     chain.link(Read::<ConnectionPoolKey>::both(pool));
     chain.link(Read::<StorageKey>::both(storage));
     chain.link(Write::<SessionStoreKey>::both(HashMap::new()));
 
     match CONFIG.server.https.clone() {
-        Some(config) => Iron::new(chain).https(("0.0.0.0", CONFIG.server.port), PathBuf::from(config.certificate), PathBuf::from(config.key)),
+        Some(config) => Iron::new(chain).https(("0.0.0.0", CONFIG.server.port), NativeTlsServer::new(PathBuf::from(config.certificate), &config.key).unwrap()),
         None => Iron::new(chain).http(("0.0.0.0", CONFIG.server.port)),
     }.unwrap()
 }
