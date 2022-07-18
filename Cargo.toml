@@ -43,7 +43,7 @@ cookie = { version =  "^0.9.1", features = ["secure"] }
 cldap = { git = "https://github.com/MPIB/rust-cldap.git", rev = "cd24a03b5e92d78efe25577732385a0bf47a2360" }
 lettre = "0.6.2"
 
-diesel = { version = "^0.15.2", features = ["chrono", "postgres", "large-tables"] }
+diesel = { version = "^1.4.6", features = ["chrono", "postgres", "large-tables"] }
 diesel_codegen = { version = "^0.15.0", default-features = false, features = ["postgres"] }
 
 r2d2 = "^0.7.3"
