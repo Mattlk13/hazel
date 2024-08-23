@@ -11,7 +11,7 @@ license = "AGPL-3"
 
 [dependencies]
 iron = { version = "^0.5.1" }
-hyper = "^0.10.0"
+hyper = "^1.4.1"
 hyper-native-tls = "^0.2.4"
 router = "^0.5.1"
 mount = "^0.3.0"
@@ -19,7 +19,7 @@ persistent = "^0.3.0"
 plugin = "^0.2.6"
 urlencoded = "^0.5.0"
 staticfile = "^0.4.0"
-regex = "^0.2.2"
+regex = "^1.5.5"
 url = "^1.5.1"
 chrono = "^0.4.0"
 treexml = "^0.6.1"
@@ -43,7 +43,7 @@ cookie = { version =  "^0.9.1", features = ["secure"] }
 cldap = { git = "https://github.com/MPIB/rust-cldap.git", rev = "cd24a03b5e92d78efe25577732385a0bf47a2360" }
 lettre = "0.6.2"
 
-diesel = { version = "^0.15.2", features = ["chrono", "postgres", "large-tables"] }
+diesel = { version = "^1.4.8", features = ["chrono", "postgres", "large-tables"] }
 diesel_codegen = { version = "^0.15.0", default-features = false, features = ["postgres"] }
 
 r2d2 = "^0.7.3"
